@@ -3,8 +3,12 @@ import {
   P, N,
   mod, modInverse,
   ecPointAddress,
+  ecMul, ecSub,
+  GX, GY,
+  bigIntToBytes,
   isOnCurve
 } from "./crypto.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import type { DLEQProof, VerificationResult } from "../types/index.js";
 
 /**
@@ -61,6 +65,10 @@ export function verifyProof(proof: DLEQProof, verbose: boolean = false): boolean
   }
   if (proof.Hinv === 0n || proof.Hinv >= P || proof.Hinv2 === 0n || proof.Hinv2 >= P) {
     if (verbose) console.log("  ❌ InvalidInput: Hinv out of range");
+    return false;
+  }
+  if (proof.A1addr === "0x0000000000000000000000000000000000000000") {
+    if (verbose) console.log("  ❌ InvalidInput: A1addr is zero address");
     return false;
   }
   if (proof.A2addr === "0x0000000000000000000000000000000000000000") {
@@ -142,6 +150,34 @@ export function verifyProof(proof: DLEQProof, verbose: boolean = false): boolean
     console.log("\nStep 5: Verifying z * G - e * W == A1...");
     console.log(`  A1 = (${proof.A1x}, ${proof.A1y})`);
     console.log(`  A1 on curve: ${isOnCurve(proof.A1x, proof.A1y)}`);
+  }
+  // Reconstruct W from Wx and Wy parity bit (bit1)
+  try {
+    const wyOdd = ((proof.parity >> 1) & 1) === 1;
+    const wxBytes = bigIntToBytes(proof.Wx, 32);
+    const wCompressed = new Uint8Array(33);
+    wCompressed[0] = wyOdd ? 0x03 : 0x02;
+    wCompressed.set(wxBytes, 1);
+    const W = secp256k1.Point.fromHex(wCompressed).toAffine();
+    
+    const [zGx, zGy] = ecMul(GX, GY, proof.z);
+    const [eWx, eWy] = ecMul(proof.Wx, W.y, e);
+    const [A1rx, A1ry] = ecSub(zGx, zGy, eWx, eWy);
+    if (verbose) {
+      console.log(`  A1 recomputed = (${A1rx}, ${A1ry})`);
+    }
+    if (A1rx !== proof.A1x || A1ry !== proof.A1y) {
+      if (verbose) console.log("  ❌ InvalidA1: coordinate mismatch");
+      return false;
+    }
+    const A1_computed_addr = ecPointAddress(A1rx, A1ry);
+    if (A1_computed_addr.toLowerCase() !== proof.A1addr.toLowerCase()) {
+      if (verbose) console.log("  ❌ InvalidA1: address mismatch");
+      return false;
+    }
+  } catch (eAny: any) {
+    if (verbose) console.log(`  ❌ A1 reconstruction failed: ${eAny?.message ?? String(eAny)}`);
+    return false;
   }
   
   // Step 6: Verify z * T and e * C

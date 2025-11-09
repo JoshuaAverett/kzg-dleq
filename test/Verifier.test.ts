@@ -2,10 +2,10 @@ import { describe, it, before } from "node:test";
 import { expect } from "chai";
 import { network } from "hardhat";
 import { keccak256, toBytes } from "viem";
-import { generateProof } from "../src/lib/prover.js";
+import { generateProof } from "../src/lib/cheat_prover.js";
 import { randomScalar, mod, N, P, GX, GY, ecMul, modInverse } from "../src/lib/crypto.js";
 import type { DLEQProof } from "../src/types/index.js";
-import { verifyOnChainAssembly } from "../src/lib/verifier.js";
+import { verifyOnChainAssembly, encodeVerifyPolynomialCalldata } from "../src/lib/verifier.js";
 
 /**
  * Comprehensive Test Suite for verifyPolynomial (Assembly-Optimized Verifier)
@@ -461,6 +461,29 @@ describe("Verifier Contract", () => {
       proof.A1addr = "0x1111111111111111111111111111111111111111";
       proof.A2addr = "0x1111111111111111111111111111111111111111";
       await expectInvalid(proof);
+    });
+  });
+
+  // ============================================================================
+  // Extra: Version Mismatch
+  // ============================================================================
+  describe("Extra: Version Mismatch", () => {
+    it("X.1: version != 1 should revert", async () => {
+      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
+      const data = encodeVerifyPolynomialCalldata(proof, 2n);
+      const result = await (async () => {
+        try {
+          const hash: `0x${string}` = await walletClient.sendTransaction({
+            to: verifier.address,
+            data,
+          });
+          await publicClient.waitForTransactionReceipt({ hash });
+          return { valid: true };
+        } catch {
+          return { valid: false };
+        }
+      })();
+      expect(result.valid).to.equal(false);
     });
   });
 

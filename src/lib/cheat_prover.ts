@@ -3,6 +3,7 @@ import {
   P, N, GX, GY,
   mod, modInverse,
   ecMul, ecSub,
+  randomScalar,
   ecPointAddress,
   evalPoly
 } from "./crypto.js";
@@ -53,8 +54,7 @@ export async function generateProof(
   const [Tx, Ty] = ecSub(Px, Py, Xx, Xy);
   
   // Generate random nonce k for DLEQ proof
-  const k = mod(BigInt("0x" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-    .map(b => b.toString(16).padStart(2, '0')).join('')), N - 1n) + 1n;
+  const k = randomScalar();
   
   // Compute A1 = k * G (first commitment)
   const [A1x, A1y] = ecMul(GX, GY, k);

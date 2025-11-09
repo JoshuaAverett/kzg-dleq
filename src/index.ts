@@ -26,13 +26,13 @@ export {
 } from "./lib/crypto.js";
 
 // Export prover
-export { generateProof } from "./lib/prover.js";
+export { generateProof } from "./lib/cheat_prover.js";
 
 // Export verifier
 export { verifyProof, encodeVerifyPolynomialCalldata, verifyOnChainAssembly } from "./lib/verifier.js";
 
 // Re-export for convenience
-import { generateProof } from "./lib/prover.js";
+import { generateProof } from "./lib/cheat_prover.js";
 import { verifyProof } from "./lib/verifier.js";
 import type { DLEQProof } from "./types/index.js";
 
@@ -53,8 +53,7 @@ export class KZGDLEQClient {
     polynomial: bigint[],
     trustedSetupSecret: bigint
   ): Promise<DLEQProof> {
-    const { createKeccak256Fn } = await import("./lib/crypto.js");
-    return generateProof(x, polynomial, trustedSetupSecret, createKeccak256Fn());
+    return generateProof(x, polynomial, trustedSetupSecret);
   }
 
   /**
