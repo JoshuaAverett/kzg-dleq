@@ -147,7 +147,7 @@ contract Verifier {
 			let xAddr := and(keccak256(0, 64), MASK_ADDRESS)
 			all_valid := and(all_valid, ecrecover(0, ECRECOVER_V_OFFSET, GX, mulmod(x, GX, N), buffer, xAddr))
 
-			// Compute d = P - X using provided Hinv
+			// Compute D = P - X using provided Hinv
 			// Gas estimate: 200
 			let d_valid, dx, dy := ecSub(px, py, xx, xy, hinv)
 			all_valid := and(all_valid, d_valid)
@@ -161,7 +161,7 @@ contract Verifier {
 			let a1_s := mulmod(sub(N, challenge), wx, N)
 			all_valid := and(all_valid, ecrecover(a1_m, a1_v, wx, a1_s, buffer, a1addr))
 
-			// Check z * T
+			// Check z * D
 			// Gas estimate: 3200
 			mstore(0, zdx)
 			mstore(32, zdy)
@@ -177,7 +177,7 @@ contract Verifier {
 			let ec_y := add(ECRECOVER_V_OFFSET, and(parity, 1))
 			all_valid := and(all_valid, ecrecover(0, ec_y, cx, mulmod(challenge, cx, N), buffer, ecaddr))
 			
-			// Compute A2 = z * T - e * C
+			// Compute A2 = z * D - e * C
 			// Gas estimate: 200
 			let a2_valid, A2rx, A2ry := ecSub(zdx, zdy, ecx, ecy, hinv2)
 			all_valid := and(all_valid, a2_valid)

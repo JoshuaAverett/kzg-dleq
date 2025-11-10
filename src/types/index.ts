@@ -1,35 +1,31 @@
 /**
- * DLEQ Proof structure for KZG Zero Evaluation proofs
- */
-export interface DLEQProof {
-  Cx: bigint;
-  Wx: bigint;
-  Px: bigint;
-  Py: bigint;
-  x: bigint;
-  Xx: bigint;
-  Xy: bigint;
-  A1x: bigint;
-  A1y: bigint;
-  A1addr: string;
-  zTx: bigint;
-  zTy: bigint;
-  eCx: bigint;
-  eCy: bigint;
-  A2addr: string;
-  Hinv: bigint;
-  Hinv2: bigint;
-  z: bigint;
-  parity: number; // bit0: Cy parity, bit1: Wy parity
-}
-
-/**
  * Verification result with detailed information
  */
 export interface VerificationResult {
-  valid: boolean;
-  error?: string;
-  gasUsed?: bigint;
-  transactionHash?: string;
+  valid: boolean
+  error?: string
+  gasUsed?: bigint
+  transactionHash?: string
 }
 
+/**
+ * Minimal point representation
+ */
+export interface Point {
+  x: bigint
+  y: bigint
+}
+
+/**
+ * Simplified DLEQ proof carrying only essential data.
+ * Points are provided in affine coordinates scalars are bigints.
+ */
+export interface DLEQProof {
+  C: Point   // commitment point
+  W: Point   // witness point
+  P: Point   // public point s*G
+  A1: Point  // Schnorr commitment zG - eW
+  A2: Point  // Schnorr commitment zT - eC
+  x: bigint  // evaluation point
+  z: bigint  // response
+}

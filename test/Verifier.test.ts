@@ -1,70 +1,10 @@
 import { describe, it, before } from "node:test";
 import { expect } from "chai";
 import { network } from "hardhat";
-import { keccak256, toBytes } from "viem";
 import { generateProof } from "../src/lib/cheat_prover.js";
-import { randomScalar, mod, N, P, GX, GY, ecMul, modInverse } from "../src/lib/crypto.js";
+import { randomScalar, mod, N, P, GX, GY, ecMul } from "../src/lib/crypto.js";
 import type { DLEQProof } from "../src/types/index.js";
-import { verifyOnChainAssembly, encodeVerifyPolynomialCalldata } from "../src/lib/verifier.js";
-
-/**
- * Comprehensive Test Suite for verifyPolynomial (Assembly-Optimized Verifier)
- * 
- * This test suite includes ~69 tests covering:
- * 
- * 1. Positive Tests (10 tests)
- *    - Basic and randomized valid proofs
- *    - Edge cases: x=1, w=1, k=1, s-x=1
- *    - Extrema: near-maximum field values, N-1 boundaries
- * 
- * 2. Negative Tests - Invalid Response z (7 tests)
- *    - Out of range: 0, N, N+1
- *    - Off-by-one errors: z±1
- *    - Random wrong values
- * 
- * 3. Negative Tests - Invalid Input x (6 tests)
- *    - Out of range: 0, N, N+1, P
- *    - Wrong values with valid range
- * 
- * 4. Negative Tests - Invalid Curve Points (9 tests)
- *    - Points not on curve
- *    - Out of range coordinates
- *    - Zero and maximum coordinates
- * 
- * 5. Negative Tests - Invalid Inverses (7 tests)
- *    - Wrong inverse values
- *    - Out of range: 0, P
- *    - Boundary values and swapped inverses
- * 
- * 6. Negative Tests - Invalid Addresses (6 tests)
- *    - Zero address
- *    - Wrong and swapped addresses
- *    - Extreme addresses (all ones, identical)
- * 
- * 7. Negative Tests - Invalid Witness Values (7 tests)
- *    - Wrong witness coordinates
- *    - Out of range values
- *    - Swapped witness values
- * 
- * 8. Negative Tests - Wrong Relationships (2 tests)
- *    - X ≠ x*G
- *    - Invalid DLEQ relationship
- * 
- * 9. Randomized Stress Tests (10 tests)
- *    - Random valid proofs with different parameters
- * 
- * 10. Polynomial Edge Cases (4 tests)
- *     - Degree 1 polynomial (minimal)
- *     - Sparse polynomial (single term)
- *     - Maximum coefficients
- *     - Alternating coefficients
- * 
- * 11. Large Polynomial Test (1 test)
- *     - 100-term polynomial with random coefficients
- * 
- * 12. Gas Usage Tests (4 tests)
- *     - Measure gas consumption for various proof types
- */
+import { verifyOnChainAssembly, encodeVerifyPolynomialCalldata } from "../src/lib/evm_verifier.js";
 
 describe("Verifier Contract", () => {
   let verifier: any;
@@ -315,155 +255,61 @@ describe("Verifier Contract", () => {
   describe("4. Negative Tests - Invalid Curve Points", () => {
     it("4.1: Invalid Cx (not on curve)", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Cx = mod(proof.Cx + 1n, P);
+      proof.C.x = mod(proof.C.x + 1n, P);
       await expectInvalid(proof);
     });
 
     it("4.2: Invalid Cy (not on curve)", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.parity ^= 0x01;
+      proof.C.y = mod(proof.C.y + 1n, P);
       await expectInvalid(proof);
     });
 
     it("4.3: Invalid Wx (not on curve)", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Wx = mod(proof.Wx + 1n, P);
+      proof.W.x = mod(proof.W.x + 1n, P);
       await expectInvalid(proof);
     });
 
     it("4.4: Invalid Wy (not on curve)", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.parity ^= 0x02;
+      proof.W.y = mod(proof.W.y + 1n, P);
       await expectInvalid(proof);
     });
 
     it("4.5: Coordinate >= P (out of range)", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Cx = P;
+      proof.C.x = P;
       await expectInvalid(proof);
     });
 
     it("4.6: Coordinate = P + 1 (way out of range)", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Wx = P + 1n;
+      proof.W.x = P + 1n;
       await expectInvalid(proof);
     });
 
     it("4.7: Coordinate = 0 (likely not on curve)", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Cx = 0n;
+      proof.C.x = 0n;
       await expectInvalid(proof);
     });
 
     it("4.8: Near-maximum coordinate with invalid point", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Cx = mod(proof.Cx + 1n, P);
+      proof.C.x = mod(proof.C.x + 1n, P);
       await expectInvalid(proof);
     });
 
     it("4.9: Both Cx and Cy modified", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Cx = mod(proof.Cx + 1n, P);
-      proof.parity ^= 0x01;
+      proof.C.x = mod(proof.C.x + 1n, P);
+      proof.C.y = mod(proof.C.y + 1n, P);
       await expectInvalid(proof);
     });
   });
 
   // ============================================================================
-  // 5. Negative Tests - Invalid Inverses
-  // ============================================================================
-
-  describe("5. Negative Tests - Invalid Inverses", () => {
-    it("5.1: Wrong Hinv", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Hinv = mod(proof.Hinv + 1n, P);
-      await expectInvalid(proof);
-    });
-
-    it("5.2: Wrong Hinv2", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Hinv2 = mod(proof.Hinv2 + 1n, P);
-      await expectInvalid(proof);
-    });
-
-    it("5.3: Hinv = 0 (out of range)", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Hinv = 0n;
-      await expectInvalid(proof);
-    });
-
-    it("5.4: Hinv2 >= P (out of range)", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Hinv2 = P;
-      await expectInvalid(proof);
-    });
-
-    it("5.5: Hinv = 1 (valid but incorrect)", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Hinv = 1n;
-      await expectInvalid(proof);
-    });
-
-    it("5.6: Hinv2 = P - 1 (max value but incorrect)", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.Hinv2 = P - 1n;
-      await expectInvalid(proof);
-    });
-
-    it("5.7: Hinv and Hinv2 swapped", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      const tempInv = proof.Hinv;
-      proof.Hinv = proof.Hinv2;
-      proof.Hinv2 = tempInv;
-      await expectInvalid(proof);
-    });
-  });
-
-  // ============================================================================
-  // 6. Negative Tests - Invalid Addresses
-  // ============================================================================
-
-  describe("6. Negative Tests - Invalid Addresses", () => {
-    it("6.1: A1addr = zero address", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.A1addr = "0x0000000000000000000000000000000000000000";
-      await expectInvalid(proof);
-    });
-
-    it("6.2: A2addr = zero address", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.A2addr = "0x0000000000000000000000000000000000000000";
-      await expectInvalid(proof);
-    });
-
-    it("6.3: Wrong A1addr (random address)", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.A1addr = "0x1234567890123456789012345678901234567890";
-      await expectInvalid(proof);
-    });
-
-    it("6.4: Swapped A1addr and A2addr", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      const tempAddr = proof.A1addr;
-      proof.A1addr = proof.A2addr;
-      proof.A2addr = tempAddr;
-      await expectInvalid(proof);
-    });
-
-    it("6.5: A1addr = all ones address", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.A1addr = "0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF";
-      await expectInvalid(proof);
-    });
-
-    it("6.6: Both addresses identical (but wrong)", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.A1addr = "0x1111111111111111111111111111111111111111";
-      proof.A2addr = "0x1111111111111111111111111111111111111111";
-      await expectInvalid(proof);
-    });
-  });
-
   // ============================================================================
   // Extra: Version Mismatch
   // ============================================================================
@@ -488,73 +334,21 @@ describe("Verifier Contract", () => {
   });
 
   // ============================================================================
-  // 7. Negative Tests - Invalid Witness Values
-  // ============================================================================
-
-  describe("7. Negative Tests - Invalid Witness Values", () => {
-    it("7.1: Wrong zT_x", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.zTx = mod(proof.zTx + 1n, P);
-      await expectInvalid(proof);
-    });
-
-    it("7.2: Wrong zT_y", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.zTy = mod(proof.zTy + 1n, P);
-      await expectInvalid(proof);
-    });
-
-    it("7.3: Wrong eC_x", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.eCx = mod(proof.eCx + 1n, P);
-      await expectInvalid(proof);
-    });
-
-    it("7.4: Wrong eC_y", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.eCy = mod(proof.eCy + 1n, P);
-      await expectInvalid(proof);
-    });
-
-    it("7.5: zT_x = 0", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.zTx = 0n;
-      await expectInvalid(proof);
-    });
-
-    it("7.6: eC_x >= P (out of range)", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      proof.eCx = P;
-      await expectInvalid(proof);
-    });
-
-    it("7.7: zT_x and eC_x swapped", async () => {
-      const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      const tempX = proof.zTx;
-      proof.zTx = proof.eCx;
-      proof.eCx = tempX;
-      await expectInvalid(proof);
-    });
-  });
-
   // ============================================================================
   // 8. Negative Tests - Wrong Relationships Between Points
   // ============================================================================
 
   describe("8. Negative Tests - Wrong Relationships", () => {
-    it("8.1: Wrong Xx (not x*G)", async () => {
+    it("8.1: Wrong P (breaks T = P - X)", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
-      const [wrongXx, wrongXy] = ecMul(GX, GY, 999n);
-      proof.Xx = wrongXx;
-      proof.Xy = wrongXy;
+      proof.P.x = mod(proof.P.x + 1n, P);
       await expectInvalid(proof);
     });
 
     it("8.2: C and W don't have correct DLEQ relationship", async () => {
       const proof = await generateValidProof(TRUSTED_SECRET, 5n, 7n);
       const [wrongWx, ] = ecMul(GX, GY, 999n);
-      proof.Wx = wrongWx;
-      proof.parity ^= 0x02;
+      proof.W.x = wrongWx;
       await expectInvalid(proof);
     });
   });

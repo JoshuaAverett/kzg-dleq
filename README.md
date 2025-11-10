@@ -1,57 +1,89 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# KZG-DLEQ
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+A TypeScript library for generating and verifying polynomials using DLEQ (Discrete Logarithm Equality) proofs, with efficient on-chain verification via optimized Solidity assembly.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## Overview
 
-## Project Overview
+This library implements a protocol for proving that a polynomial evaluates to zero at a specific point (p(x) = 0) using KZG commitments and DLEQ proofs. The proof generation and verification can be performed both off-chain (TypeScript) and on-chain (Solidity) with gas-optimized assembly.
 
-This example project includes:
+### Key Features
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+- **Zero Evaluation Proofs**: Prove that p(x) = 0 for a committed polynomial
+- **DLEQ Protocol**: Uses Discrete Logarithm Equality proofs for security
+- **Dual Verification**: TypeScript and Solidity implementations
+- **Gas Optimized**: Assembly-optimized on-chain verifier (~13.8k gas + calldata)
+- **Secp256k1 Curve**: Uses the same elliptic curve as Bitcoin/Ethereum
+- **Ecrecover Optimization**: Leverages native precompiles for efficient EC operations
+
+## Installation
+
+```shell
+npm install
+```
 
 ## Usage
 
-### Running Tests
+### Basic Proof Generation and Verification
 
-To run all the tests in the project, execute the following command:
+```typescript
+import { KZGDLEQClient } from 'kzg-dleq';
+
+const client = new KZGDLEQClient();
+
+// Generate a proof
+const x = 5n; // evaluation point
+const polynomial = [1n, 2n, 3n]; // coefficients: 1 + 2x + 3x²
+const trustedSetupSecret = 42n;
+
+const proof = await client.prove(x, polynomial, trustedSetupSecret);
+
+// Verify off-chain
+const isValid = client.verify(proof, verbose = true);
+console.log('Proof valid:', isValid);
+```
+
+### On-Chain Verification
+
+```typescript
+import { verifyOnChainAssembly } from 'kzg-dleq';
+
+// Deploy verifier contract with trusted setup point P = s*G
+const verifierAddress = '0x...';
+
+// Verify proof on-chain
+const result = await client.verifyOnChain(
+  verifierAddress,
+  proof,
+  walletClient,
+  publicClient
+);
+```
+
+## Testing
+
+Run the test suite:
 
 ```shell
 npx hardhat test
 ```
 
-You can also selectively run the Solidity or `node:test` tests:
+The test suite includes:
+- TypeScript verifier tests
+- On-chain Solidity verifier tests
+- Gas estimation benchmarks
 
-```shell
-npx hardhat test solidity
-npx hardhat test nodejs
-```
+## Architecture
 
-### Make a deployment to Sepolia
+### Components
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
+- **Prover** (`src/lib/cheat_prover.ts`): Generates DLEQ proofs for zero evaluation
+- **Verifier** (`src/lib/verifier.ts`): TypeScript implementation of proof verification
+- **EVM Verifier** (`contracts/verifier.sol`): Gas-optimized Solidity verifier using assembly
+- **Crypto Utils** (`src/lib/crypto.ts`): Elliptic curve operations on Secp256k1
 
-To run the deployment to a local chain:
+### Protocol
 
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
-```
-
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
-
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
-
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-```
-
-After setting the variable, you can run the deployment with the Sepolia network:
-
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
-```
+1. **Commitment**: Prover commits to polynomial using trusted setup
+2. **Challenge**: Fiat-Shamir challenge derived from proof elements
+3. **DLEQ Proof**: Proves discrete log equality without revealing secrets
+4. **Verification**: Verifier checks proof equations using EC operations

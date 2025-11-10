@@ -1,9 +1,11 @@
-import { keccak256 } from "viem";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { mod, invert } from "@noble/curves/abstract/modular.js";
 import { bytesToNumberBE, numberToBytesBE } from "@noble/curves/utils.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { randomBytes } from "@noble/hashes/utils.js";
+import { createPrimeField } from "@guildofweavers/galois";
+
+export { mod };
 
 // Secp256k1 curve constants
 export const P = secp256k1.Point.CURVE().p;
@@ -11,6 +13,9 @@ export const N = secp256k1.Point.CURVE().n;
 export const G = secp256k1.Point.BASE;
 export const GX = G.toAffine().x;
 export const GY = G.toAffine().y;
+
+// Shared finite field over scalar modulus N
+export const Field = createPrimeField(N);
 
 // Utility functions
 export const bytesToBigInt = bytesToNumberBE;
@@ -77,7 +82,7 @@ export function isOnCurve(x: bigint, y: bigint): boolean {
 /**
  * Compute Ethereum address from an EC point (last 20 bytes of keccak256(x || y))
  */
-export function ecPointAddress(x: bigint, y: bigint): string {
+export function ecAddress(x: bigint, y: bigint): string {
   const xBytes = bigIntToBytes(x, 32);
   const yBytes = bigIntToBytes(y, 32);
   const packed = new Uint8Array(64);
@@ -87,45 +92,4 @@ export function ecPointAddress(x: bigint, y: bigint): string {
   const hash = keccak_256(packed);
   return '0x' + Array.from(hash.slice(-20)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
-
-/**
- * Evaluate a polynomial at a given point
- * @param coeffs Polynomial coefficients [c0, c1, c2, ...] representing c0 + c1*x + c2*x^2 + ...
- * @param x Point to evaluate at
- * @returns p(x) mod N
- */
-export function evalPoly(coeffs: bigint[], x: bigint): bigint {
-  let result = 0n;
-  let xPower = 1n;
-  
-  for (const coeff of coeffs) {
-    result = mod(result + mod(coeff * xPower, N), N);
-    xPower = mod(xPower * x, N);
-  }
-  
-  return result;
-}
-
-/**
- * Hash data to a scalar using keccak256
- */
-export function hashToScalar(data: Uint8Array): bigint {
-  return bytesToBigInt(keccak_256(data));
-}
-
-/**
- * Create a keccak256 function that returns Uint8Array (for compatibility)
- */
-export function createKeccak256Fn(): (data: Uint8Array) => Uint8Array {
-  return (data: Uint8Array): Uint8Array => {
-    const hash = keccak256(data);
-    const result = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) {
-      result[i] = parseInt(hash.slice(2 + i * 2, 4 + i * 2), 16);
-    }
-    return result;
-  };
-}
-
-export { mod };
 

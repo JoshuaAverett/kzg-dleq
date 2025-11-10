@@ -4,12 +4,18 @@
  * A client library for generating and verifying KZG zero evaluation proofs using DLEQ.
  */
 
+import { generateProof } from "./lib/cheat_prover.js";
+import { verifyProofSimple } from "./lib/verifier.js";
+import { verifyOnChainAssembly } from "./lib/evm_verifier.js";
+import type { DLEQProof } from "./types/index.js";
+
 // Export types
-export type { DLEQProof, VerificationResult } from "./types/index.js";
+export type { VerificationResult, Point, DLEQProof as SimpleDLEQProof } from "./types/index.js";
 
 // Export crypto utilities
 export {
   P, N, G, GX, GY,
+  Field,
   mod,
   modInverse,
   randomScalar,
@@ -17,24 +23,17 @@ export {
   ecAdd,
   ecSub,
   isOnCurve,
-  ecPointAddress,
-  evalPoly,
-  hashToScalar,
+  ecAddress as ecPointAddress,
   bytesToBigInt,
-  bigIntToBytes,
-  createKeccak256Fn
+  bigIntToBytes
 } from "./lib/crypto.js";
 
 // Export prover
-export { generateProof } from "./lib/cheat_prover.js";
+export { generateProof as generateSimpleProof } from "./lib/cheat_prover.js";
 
 // Export verifier
-export { verifyProof, encodeVerifyPolynomialCalldata, verifyOnChainAssembly } from "./lib/verifier.js";
-
-// Re-export for convenience
-import { generateProof } from "./lib/cheat_prover.js";
-import { verifyProof } from "./lib/verifier.js";
-import type { DLEQProof } from "./types/index.js";
+export { verifyProofSimple } from "./lib/verifier.js";
+export { encodeVerifyPolynomialCalldata, verifyOnChainAssembly } from "./lib/evm_verifier.js";
 
 /**
  * Main client class for KZG-DLEQ operations
@@ -64,7 +63,7 @@ export class KZGDLEQClient {
    * @returns true if the proof is valid, false otherwise
    */
   verify(proof: DLEQProof, verbose: boolean = false): boolean {
-    return verifyProof(proof, verbose);
+    return verifyProofSimple(proof, verbose);
   }
 
   /**
@@ -77,7 +76,6 @@ export class KZGDLEQClient {
     publicClient: any,
     version: bigint = 1n
   ) {
-    const { verifyOnChainAssembly } = await import("./lib/verifier.js");
     return verifyOnChainAssembly(contractAddress, proof, walletClient, publicClient, version);
   }
 }

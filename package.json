@@ -26,6 +26,7 @@
     "viem": "^2.38.6"
   },
   "dependencies": {
+    "@guildofweavers/galois": "^0.4.22",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1"
   }
