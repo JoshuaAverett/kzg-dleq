@@ -1,5 +1,5 @@
 import {
-	N, P,
+	N,
 	GX, GY,
 	mod, modInverse,
 	ecMul, ecSub,

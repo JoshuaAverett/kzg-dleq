@@ -1,4 +1,4 @@
-import { N, mod, randomScalar, Field } from "./crypto.js"
+import { N, mod, randomScalar, Field } from './crypto.js'
 
 export function generateSharedSRS(
   numNodes: number,
@@ -7,7 +7,7 @@ export function generateSharedSRS(
 ): bigint[][] {
   const s = mod(secret, N)
   if (s === 0n) {
-    throw new Error("secret must be non-zero modulo N")
+    throw new Error('secret must be non-zero modulo N')
   }
 
   // Precompute powers: s^0 .. s^maxDegree (mod N) via Galois
