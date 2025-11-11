@@ -1,10 +1,11 @@
 import { describe, it, before } from "node:test";
 import { expect } from "chai";
 import { network } from "hardhat";
-import { generateProof } from "../src/lib/cheat_prover.js";
-import { randomScalar, mod, N, P, GX, GY, ecMul } from "../src/lib/crypto.js";
+import { randomScalar, mod, N, P, GX, GY, ecMul, Field } from "../src/lib/crypto.js";
 import type { DLEQProof } from "../src/types/index.js";
 import { verifyOnChainAssembly, encodeVerifyPolynomialCalldata } from "../src/lib/evm_verifier.js";
+import { generateSharedSRS } from "../src/lib/cheat_srs.js";
+import { proverStart, proverChallenge, proverRespond, proverFinalize } from "../src/lib/prover.js"
 
 describe("Verifier Contract", () => {
   let verifier: any;
@@ -31,6 +32,45 @@ describe("Verifier Contract", () => {
   // Helper Functions
   // ============================================================================
 
+  async function generateProofViaShares(coeffs: bigint[], x: bigint, s: bigint, numNodes: number = 4): Promise<DLEQProof> {
+    const pVec = Field.newVectorFrom(coeffs);
+    const srsShares = generateSharedSRS(numNodes, coeffs.length - 1, s);
+    const [Px, Py] = ecMul(GX, GY, s);
+
+    // Round 1: per-node messages and state
+    const round1 = await Promise.all(
+      srsShares.map((share) =>
+        proverStart({
+          x,
+          p: pVec,
+          srsShare: share,
+          P: { x: Px, y: Py },
+        })
+      )
+    );
+
+    const shares = round1.map(r => r.message);
+    const states = round1.map(r => r.state);
+
+    // Aggregation and challenge
+    const challenge = await proverChallenge({
+      shares,
+      x,
+      P: { x: Px, y: Py },
+    } as any);
+
+    // Round 2: z-shares
+    const responses = states.map(st => proverRespond(challenge, st));
+
+    // Finalize proof
+    const end = proverFinalize({
+      challenge,
+      responses,
+    } as any);
+
+    return end.proof;
+  }
+
   /**
    * Generate a valid proof from secret s, evaluation point x, and witness w
    * This constructs a polynomial p where p(x) = 0 and p(s) = w * (s - x)
@@ -42,8 +82,7 @@ describe("Verifier Contract", () => {
     // We use: p(t) = w * (t - x)
     // Expanded: p(t) = -w*x + w*t
     const coeffs = [mod(-mod(w * x, N), N), w];
-    
-    return await generateProof(x, coeffs, s);
+    return await generateProofViaShares(coeffs, x, s);
   }
 
   // ----------------------------------------------------------------------------
@@ -135,18 +174,12 @@ describe("Verifier Contract", () => {
       await expectValid(proof);
     });
 
-    it("1.9: Valid proof with s = x = 1 (would cause s-x = 0)", async () => {
-      // This should fail at proof generation time, not verification
-      const s9 = 1n;
-      const x9 = 1n;
+    it("1.9: s = x should be rejected (degenerate T = P - X)", async () => {
+      const s9 = TRUSTED_SECRET;
+      const x9 = TRUSTED_SECRET;
       const w9 = 1n;
-      let failed = false;
-      try {
-        await generateValidProof(s9, x9, w9);
-      } catch (error) {
-        failed = true;
-      }
-      expect(failed).to.be.true;
+      const proof = await generateValidProof(s9, x9, w9);
+      await expectInvalid(proof);
     });
 
     it("1.10: Valid proof where s - x = 1", async () => {
@@ -380,7 +413,7 @@ describe("Verifier Contract", () => {
       const b_deg1 = 42n;
       const a_deg1 = mod(-mod(b_deg1 * x_deg1, N), N);
       const coeffs_deg1 = [a_deg1, b_deg1];
-      const proof = await generateProof(x_deg1, coeffs_deg1, TRUSTED_SECRET);
+      const proof = await generateProofViaShares(coeffs_deg1, x_deg1, TRUSTED_SECRET);
       await expectValid(proof);
     });
 
@@ -388,7 +421,7 @@ describe("Verifier Contract", () => {
       const r_sparse = 50n;
       const c_sparse = 123n;
       const coeffs_sparse = [mod(-mod(c_sparse * r_sparse, N), N), c_sparse];
-      const proof = await generateProof(r_sparse, coeffs_sparse, TRUSTED_SECRET);
+      const proof = await generateProofViaShares(coeffs_sparse, r_sparse, TRUSTED_SECRET);
       await expectValid(proof);
     });
 
@@ -402,7 +435,7 @@ describe("Verifier Contract", () => {
         x_pow_max = mod(x_pow_max * x_max, N);
       }
       coeffs_max[0] = mod(-sum_max, N);
-      const proof = await generateProof(x_max, coeffs_max, TRUSTED_SECRET);
+      const proof = await generateProofViaShares(coeffs_max, x_max, TRUSTED_SECRET);
       await expectValid(proof);
     });
 
@@ -419,7 +452,7 @@ describe("Verifier Contract", () => {
         x_pow_alt = mod(x_pow_alt * x_alt, N);
       }
       coeffs_alt[0] = mod(-sum_alt, N);
-      const proof = await generateProof(x_alt, coeffs_alt, TRUSTED_SECRET);
+      const proof = await generateProofViaShares(coeffs_alt, x_alt, TRUSTED_SECRET);
       await expectValid(proof);
     });
   });
@@ -446,7 +479,7 @@ describe("Verifier Contract", () => {
       }
       coeffs[0] = mod(-sum, N);
 
-      const proof = await generateProof(x_poly, coeffs, s_poly);
+      const proof = await generateProofViaShares(coeffs, x_poly, s_poly);
       await expectValid(proof);
     });
   });
