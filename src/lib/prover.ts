@@ -1,11 +1,15 @@
 import {
-	GX, GY,
-	ecMul, ecAdd, ecSub,
+	GX,
+	GY,
+	ecMul,
+	ecAdd,
+	ecSub,
 	ecAddress,
 	Field,
 	deterministicNonce,
+	Point,
 } from './crypto.js'
-import type { Point, DLEQProof } from '../types/index.js'
+import type { DLEQProof } from './verifier.js'
 import type { Vector } from '@guildofweavers/galois'
 import { buildChallenge } from './challenge.js'
 
@@ -33,10 +37,8 @@ export interface PolyEvalProof {
 	A2i: Point
 }
 
-// The aggregator computes the challenge and sends it to all nodes
-export interface PolyEvalProofChallenge {
-	// Inputs for aggregation (array of previous step outputs)
-	shares: PolyEvalProof[]
+// Round 2 output from a node: aggregate context + local z share
+export interface PolyEvalRound2 {
 	// Public context
 	x: bigint
 	P: Point
@@ -46,20 +48,8 @@ export interface PolyEvalProofChallenge {
 	A1: Point
 	A2: Point
 	e: bigint
-}
-
-// The nodes compute their response and send it to the aggregator
-export interface PolyEvalProofResponse {
+	// Local response share
 	z: bigint
-}
-
-// The aggregator computes the final proof and sends it to the verifier
-export interface PolyEvalProofFinal {
-	// Inputs for finalization (array of previous step outputs)
-	challenge: PolyEvalProofChallenge
-	responses: PolyEvalProofResponse[]
-	// Final proof for the verifier
-	proof: DLEQProof
 }
 
 /**
@@ -93,11 +83,15 @@ export async function proverStart(
 
 	// Per-node deterministic nonce derived from secret wi and context
 	const k = deterministicNonce(wi, [message.x, message.P.x, message.P.y, Cix, Wix])
+
+	// A1i = k * G
 	const [A1ix, A1iy] = ecMul(GX, GY, k)
 
 	// T = P - X
 	const [Xx, Xy] = ecMul(GX, GY, message.x)
 	const [Tx, Ty] = ecSub(message.P.x, message.P.y, Xx, Xy)
+
+	// A2i = k * T
 	const [A2ix, A2iy] = ecMul(Tx, Ty, k)
 
 	return {
@@ -112,12 +106,16 @@ export async function proverStart(
 }
 
 /**
- * Aggregation: combine Ci, Wi, A1i, A2i and compute challenge e.
+ * Round 2 (merged): from broadcast shares, each node aggregates, builds e,
+ * and computes its z share using its local secret state.
  */
-export async function proverChallenge(
-	message: PolyEvalProofChallenge,
-): Promise<PolyEvalProofChallenge> {
-	if (message.shares.length === 0) throw new Error('No shares provided')
+export function proverRespond(
+	shares: PolyEvalProof[],
+	x: bigint,
+	P: Point,
+	state: PolyEvalProofState,
+): PolyEvalRound2 {
+	if (shares.length === 0) throw new Error('No shares provided')
 
 	// Aggregate points: C = sum Ci, W = sum Wi, A1 = sum A1i, A2 = sum A2i
 	const sumPoints = (pts: Point[]): Point => {
@@ -129,59 +127,50 @@ export async function proverChallenge(
 		return acc
 	}
 
-	const C = sumPoints(message.shares.map(s => s.Ci))
-	const W = sumPoints(message.shares.map(s => s.Wi))
-	const A1 = sumPoints(message.shares.map(s => s.A1i))
-	const A2 = sumPoints(message.shares.map(s => s.A2i))
+	const C = sumPoints(shares.map(s => s.Ci))
+	const W = sumPoints(shares.map(s => s.Wi))
+	const A1 = sumPoints(shares.map(s => s.A1i))
+	const A2 = sumPoints(shares.map(s => s.A2i))
 
 	// Challenge
 	const A1addr = ecAddress(A1.x, A1.y)
 	const A2addr = ecAddress(A2.x, A2.y)
 	const parity = Number((C.y & 1n) | ((W.y & 1n) << 1n))
-	const e = buildChallenge(C.x, W.x, message.P.x, message.P.y, A1addr, A2addr, message.x, parity)
+	const e = buildChallenge(C.x, W.x, P.x, P.y, A1addr, A2addr, x, parity)
 
-	return { ...message, C, W, A1, A2, e }
-}
+	// Response
+	const z = Field.add(state.k, Field.mul(e, state.wi))
 
-/**
- * Round 2 (node): verify e against (C, W, A1, A2) and output z_i.
- * z_i = k_i + e * w_i (mod N).
- */
-export function proverRespond(
-	message: PolyEvalProofChallenge,
-	state: PolyEvalProofState,
-): PolyEvalProofResponse {
-	const A1addr = ecAddress(message.A1.x, message.A1.y)
-	const A2addr = ecAddress(message.A2.x, message.A2.y)
-	const parity = Number((message.C.y & 1n) | ((message.W.y & 1n) << 1n))
-	const e2 = buildChallenge(message.C.x, message.W.x, message.P.x, message.P.y, A1addr, A2addr, message.x, parity)
-	if (e2 !== message.e) {
-		throw new Error('Challenge mismatch; refusing to release z share')
+	const round2: PolyEvalRound2 = {
+		x,
+		P,
+		C,
+		W,
+		A1,
+		A2,
+		e,
+		z,
 	}
-	const z = Field.add(state.k, Field.mul(message.e, state.wi))
-	return { z }
+
+	return round2
 }
 
 /**
  * Aggregator helper: sum z_i shares and emit the final DLEQProof.
  */
 export function proverFinalize(
-	message: PolyEvalProofFinal,
-): PolyEvalProofFinal {
-	if (message.responses.length === 0) {
-		throw new Error('No z-shares provided')
+	message: PolyEvalRound2[],
+): DLEQProof {
+	if (message.length === 0) {
+		throw new Error('No Round 2 outputs provided')
 	}
-	const zVec = Field.newVectorFrom(message.responses.map(r => r.z))
-	const ones = Field.newVectorFrom(Array(message.responses.length).fill(1n))
+	const zVec = Field.newVectorFrom(message.map(r => r.z))
+	const ones = Field.newVectorFrom(Array(message.length).fill(1n))
 	const z = Field.combineVectors(zVec, ones)
+	const ctx = message[0]
 	const proof: DLEQProof = {
-		C: message.challenge.C,
-		W: message.challenge.W,
-		P: message.challenge.P,
-		A1: message.challenge.A1,
-		A2: message.challenge.A2,
-		x: message.challenge.x,
+		...ctx,
 		z,
 	}
-	return { ...message, proof }
+	return proof
 }

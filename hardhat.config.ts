@@ -43,10 +43,4 @@ export default defineConfig({
       accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
   },
-  test: {
-    runner: "mocha",
-  },
-  mocha: {
-    timeout: 60000,
-  },
 });

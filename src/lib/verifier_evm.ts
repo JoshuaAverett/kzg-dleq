@@ -1,7 +1,14 @@
 import { keccak256, toBytes } from 'viem'
-import type { DLEQProof, VerificationResult } from '../types/index.js'
+import type { DLEQProof } from './verifier.js'
 import { P, N, GX, GY, ecMul, ecSub, mod, modInverse, ecAddress, isOnCurve } from './crypto.js'
 import { buildChallenge } from './challenge.js'
+
+export interface VerificationResult {
+	valid: boolean
+	error?: string
+	gasUsed?: bigint
+	transactionHash?: string
+}
 
 /**
  * Encode calldata for Verifier.verifyPolynomial() (assembly-optimized) using the minimal proof.

@@ -1,5 +1,6 @@
 import { keccak256 } from 'viem'
 import { mod, N } from './crypto.js'
+import { concat, encodeU8, encodeU256, encodeAddress } from './bytes.js'
 
 /**
  * Build Fiat–Shamir challenge e using the exact packing expected on-chain:
@@ -15,37 +16,17 @@ export function buildChallenge(
 	x: bigint,
 	parity: number
 ): bigint {
-	const challengeData = new Uint8Array(1 + 32 * 5 + 20 * 2 + 1)
-	let offset = 0
-
-	const writeUint8 = (value: number) => {
-		challengeData[offset++] = value & 0xff
-	}
-
-	const writeUint256 = (value: bigint) => {
-		for (let i = 0; i < 32; i++) {
-			challengeData[offset + i] = Number((value >> BigInt(8 * (31 - i))) & 0xFFn)
-		}
-		offset += 32
-	}
-
-	const writeAddress = (addr: string) => {
-		const addrBytes = addr.startsWith('0x') ? addr.slice(2) : addr
-		for (let i = 0; i < 20; i++) {
-			challengeData[offset + i] = parseInt(addrBytes.slice(i * 2, i * 2 + 2), 16)
-		}
-		offset += 20
-	}
-
-	writeUint8(0x01)
-	writeUint256(Cx)
-	writeUint256(Wx)
-	writeUint256(Px)
-	writeUint256(Py)
-	writeAddress(A1addr)
-	writeAddress(A2addr)
-	writeUint256(x)
-	writeUint8(parity)
+	const challengeData = concat(
+		encodeU8(0x01),
+		encodeU256(Cx),
+		encodeU256(Wx),
+		encodeU256(Px),
+		encodeU256(Py),
+		encodeAddress(A1addr),
+		encodeAddress(A2addr),
+		encodeU256(x),
+		encodeU8(parity)
+	)
 
 	return mod(BigInt(keccak256(challengeData)), N)
 }

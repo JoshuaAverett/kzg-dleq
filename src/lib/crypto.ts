@@ -2,11 +2,15 @@ import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { mod, invert } from '@noble/curves/abstract/modular.js'
 import { bytesToNumberBE, numberToBytesBE } from '@noble/curves/utils.js'
 import { keccak_256 } from '@noble/hashes/sha3.js'
-import { hkdf, extract as hkdfExtract, expand as hkdfExpand } from '@noble/hashes/hkdf.js'
-import { randomBytes } from '@noble/hashes/utils.js'
+import { hkdf } from '@noble/hashes/hkdf.js'
 import { createPrimeField } from '@guildofweavers/galois'
+import { concat, encodeU256, encodeAddress, encodeUtf8, randomBytes } from './bytes.js'
 
 export { mod }
+export interface Point {
+	x: bigint
+	y: bigint
+}
 
 // Secp256k1 curve constants
 export const P = secp256k1.Point.CURVE().p
@@ -21,6 +25,13 @@ export const Field = createPrimeField(N)
 // Utility functions
 export const bytesToBigInt = bytesToNumberBE
 export const bigIntToBytes = numberToBytesBE
+
+/**
+ * Hash helper: Keccak-256 over a single byte array.
+ */
+export function hash(data: Uint8Array): Uint8Array {
+	return keccak_256(data)
+}
 
 /**
  * Compute modular inverse: a^(-1) mod m
@@ -41,35 +52,22 @@ export function randomScalar(): bigint {
  * This is intended to protect against RNG failure and nonce reuse.
  */
 export function deterministicNonce(secret: bigint, parts: Array<bigint | string | Uint8Array>): bigint {
-	const enc32 = (v: bigint): Uint8Array => bigIntToBytes(mod(v, N), 32)
-	const encAddr = (hex: string): Uint8Array => {
-		const s = hex.startsWith('0x') ? hex.slice(2) : hex
-		const out = new Uint8Array(20)
-		for (let i = 0; i < 20; i++) {
-			out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16) || 0
-		}
-		return out
-	}
-	const encUtf8 = (s: string): Uint8Array => new TextEncoder().encode(s)
+	const enc32 = (v: bigint): Uint8Array => encodeU256(mod(v, N), 32)
 
 	// domain separation
-	const chunks: Uint8Array[] = [encUtf8('dleq-nonce-v1'), enc32(secret)]
+	const chunks: Uint8Array[] = [encodeUtf8('dleq-nonce-v1'), enc32(secret)]
 	for (const p of parts) {
 		if (typeof p === 'bigint') chunks.push(enc32(p))
 		else if (typeof p === 'string') {
-			if (/^0x[0-9a-fA-F]{40}$/.test(p)) chunks.push(encAddr(p))
-			else chunks.push(encUtf8(p))
+			if (/^0x[0-9a-fA-F]{40}$/.test(p)) chunks.push(encodeAddress(p))
+			else chunks.push(encodeUtf8(p))
 		} else {
 			chunks.push(p)
 		}
 	}
-	let total = 0
-	for (const c of chunks) total += c.length
-	const buf = new Uint8Array(total)
-	let off = 0
-	for (const c of chunks) { buf.set(c, off); off += c.length }
 
-	const h = keccak_256(buf)
+	const buf = concat(...chunks)
+	const h = hash(buf)
 	// Map to [1, N)
 	return mod(bytesToBigInt(h), N - 1n) + 1n
 }
@@ -124,12 +122,10 @@ export function isOnCurve(x: bigint, y: bigint): boolean {
 export function ecAddress(x: bigint, y: bigint): string {
 	const xBytes = bigIntToBytes(x, 32)
 	const yBytes = bigIntToBytes(y, 32)
-	const packed = new Uint8Array(64)
-	packed.set(xBytes, 0)
-	packed.set(yBytes, 32)
+	const packed = concat(xBytes, yBytes)
 	
-	const hash = keccak_256(packed)
-	return '0x' + Array.from(hash.slice(-20)).map(b => b.toString(16).padStart(2, '0')).join('')
+	const digest = hash(packed)
+	return '0x' + Array.from(digest.slice(-20)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**
@@ -145,7 +141,6 @@ export function ecdh(secret: bigint, peerX: bigint, peerY: bigint): Uint8Array {
 /**
  * HKDF (Keccak-256) one-shot.
  */
-export function hkdfKeccak(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array | string, length = 32): Uint8Array {
-	const infoBytes = typeof info === 'string' ? new TextEncoder().encode(info) : info
-	return hkdf(keccak_256, ikm, salt, infoBytes, length)
+export function hkdfKeccak(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array, length = 32): Uint8Array {
+	return hkdf(keccak_256, ikm, salt, info, length)
 }

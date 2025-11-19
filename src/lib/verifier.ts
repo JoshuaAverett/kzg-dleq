@@ -3,16 +3,31 @@ import {
 	ecAddress,
 	ecMul, ecSub,
 	GX, GY,
-	isOnCurve
+	isOnCurve,
+	Point
 } from './crypto.js'
-import type { DLEQProof } from '../types/index.js'
 import { buildChallenge } from './challenge.js'
 
+
 /**
- * Minimal verifier for the simplified DLEQ proof.
+ * Simplified DLEQ proof carrying only essential data.
+ * Points are provided in affine coordinates scalars are bigints.
+ */
+export interface DLEQProof {
+	C: Point   // commitment point
+	W: Point   // witness point
+	P: Point   // public point s*G
+	A1: Point  // Schnorr commitment zG - eW
+	A2: Point  // Schnorr commitment zT - eC
+	x: bigint  // evaluation point
+	z: bigint  // response
+}
+
+/**
+ * Minimal verifier for the DLEQ proof.
  * Accepts only the essential points and scalars and recomputes the rest.
  */
-export function verifyProof(proof: DLEQProof, verbose: boolean = false): boolean {
+export function verifyProof(proof: DLEQProof): boolean {
 	// Basic scalar range checks
 	if (proof.x === 0n || proof.x >= N) return false
 	if (proof.z === 0n || proof.z >= N) return false
