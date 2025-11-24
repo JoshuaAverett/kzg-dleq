@@ -97,7 +97,7 @@ async function generateProofsViaSharesDual(
         p: poly,
         srsShare: share,
         P: Ppub,
-      } as PolyEvalProofStart),
+      }),
     ),
   );
   const endClassicR1 = hrtimeMs();
@@ -133,7 +133,7 @@ async function generateProofsViaSharesDual(
         p: poly,
         srsShare: srsShares[i]!,
         P: Ppub,
-      } as PolyEvalVoleStart,
+      },
       oleSample,
     );
     voleShares.push(share);
@@ -270,7 +270,7 @@ describe("Verifier Contract", () => {
       };
       voleSenderSamples.push(oleSample);
       const { share } = await proverVoleStart(
-        { x, p: poly, srsShare: srsShares[i]!, P: Ppub } as PolyEvalVoleStart,
+        { x, p: poly, srsShare: srsShares[i]!, P: Ppub },
         oleSample,
       );
       voleShares.push(share);

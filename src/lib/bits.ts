@@ -37,16 +37,16 @@ export class BitVector {
 		return new BitVector(bytes.length * 8, bytes.slice())
 	}
 
-	get(i: number): 0 | 1 {
+	get(i: number): boolean {
 		if (i < 0 || i >= this.length) {
 			throw new Error('BitVector.get: index out of range')
 		}
 		const byte = this.data[i >> 3]
 		const bit = (byte >> (i & 7)) & 1
-		return bit as 0 | 1
+		return bit != 0
 	}
 
-	set(i: number, bit: 0 | 1): void {
+	set(i: number, bit: boolean): void {
 		if (i < 0 || i >= this.length) {
 			throw new Error('BitVector.set: index out of range')
 		}
@@ -161,17 +161,17 @@ export class BitMatrix {
 		return new BitMatrix(rows, cols, vec)
 	}
 
-	get(row: number, col: number): 0 | 1 {
+	get(row: number, col: number): boolean {
 		if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) {
 			throw new Error('BitMatrix.get: index out of range')
 		}
 		const bitIndex = row * this.cols + col
 		const byte = this.data[bitIndex >> 3]
 		const bit = (byte >> (bitIndex & 7)) & 1
-		return bit as 0 | 1
+		return bit != 0
 	}
 
-	set(row: number, col: number, bit: 0 | 1): void {
+	set(row: number, col: number, bit: boolean): void {
 		if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) {
 			throw new Error('BitMatrix.set: index out of range')
 		}
@@ -243,5 +243,4 @@ export class BitMatrix {
 			this.set(r, col, bits.get(r))
 		}
 	}
-}
 }

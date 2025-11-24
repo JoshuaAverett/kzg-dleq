@@ -116,7 +116,7 @@ export function otReceiverInit(
 		// B = A + b·G      if choice = 1
 		let Bx = bGx
 		let By = bGy
-		if (bit === 1) {
+		if (bit) {
 			;[Bx, By] = ecAdd(params.A.x, params.A.y, bGx, bGy)
 		}
 
@@ -241,9 +241,9 @@ export function otReceiverDecrypt(
 		const response = responses[i]!	
 
 		const choiceBit = state.choices.get(i)
-		const cb = choiceBit === 0 ? response.c0 : response.c1
-		const nonceb = choiceBit === 0 ? response.nonce0 : response.nonce1
-		const tagb = choiceBit === 0 ? response.tag0 : response.tag1
+		const cb = choiceBit ? response.c1 : response.c0
+		const nonceb = choiceBit ? response.nonce1 : response.nonce0
+		const tagb = choiceBit ? response.tag1 : response.tag0
 		
 		// Compute shared secret: sb = ECDH(b_i, A) = b_i·A
 		const sb = ecdh(state.b[i]!, params.A.x, params.A.y)

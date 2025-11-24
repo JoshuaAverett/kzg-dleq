@@ -196,7 +196,7 @@ function encodeInputsToChoices(
 		for (let j = 0; j < bitLength; j++) {
 			const bit = Number(v & 1n) as 0 | 1
 			if (bit) {
-				choices.set(i * bitLength + j, 1)
+				choices.set(i * bitLength + j, true)
 			}
 			v >>= 1n
 		}

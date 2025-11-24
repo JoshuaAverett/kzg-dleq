@@ -42,8 +42,8 @@ export function beaverEncryptFromRandomOT(
 	const c1 = new Array<Uint8Array>(n)
 
 	for (let i = 0; i < n; i++) {
-		const m0i = m0[i]!
-		const m1i = m1[i]!
+		const m0i = m0[i]
+		const m1i = m1[i]
 
 		const mask0 = hash(concat(tag, k0[i]!))
 		const mask1 = hash(concat(tag, k1[i]!))
@@ -85,7 +85,7 @@ export function beaverDecryptFromRandomOT(
 	for (let i = 0; i < n; i++) {
 		const choice = choices.get(i)
 		const key = keys[i]!
-		const ct = choice === 0 ? c0[i]! : c1[i]!
+		const ct = choice ? c1[i] : c0[i]
 
 		const mask = hash(concat(tag, key))
 		if (mask.length !== ct.length) {
